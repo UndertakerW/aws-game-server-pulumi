@@ -26,4 +26,4 @@ jobs:
       - name: Deploy AWS server with Pulumi
         run: |
           python -VV
-          python -m ./Pulumi/__main__.py
+          python ./Pulumi/__main__.py
