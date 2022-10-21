@@ -32,6 +32,8 @@ lambdaPermissions = []
 apiRoutes = []
 apiIntegrations = []
 
+namingSuffix = "-2022-pulumi"
+
 tags = {
     "Environment": pulumi.get_stack(),
     "ProjectName": pulumi.get_project(),
@@ -41,7 +43,7 @@ tags = {
 
 # DynamoDB item table
 dbTable = aws.dynamodb.Table(
-    "game-session-2022-pulumi",
+    "game-session" + namingSuffix,
     attributes=[aws.dynamodb.TableAttributeArgs(name="uuid", type="S")],
     hash_key="uuid",
     read_capacity=1,
@@ -50,7 +52,7 @@ dbTable = aws.dynamodb.Table(
 )
 
 dbTableIAmPolicy = aws.iam.Policy(
-    "iam-policy-2022-pulumi",
+    "iam-policy" + namingSuffix,
     description="This policy grants permission to interact with DynamoDB",
     policy=dbTable.arn.apply(
         lambda arn: json.dumps(
@@ -77,7 +79,7 @@ dbTableIAmPolicy = aws.iam.Policy(
 
 # Create Lambda Function role
 dbTableIAmRole = aws.iam.Role(
-    "iam-role-2022-pulumi",
+    "iam-role" + namingSuffix,
     assume_role_policy=json.dumps(
         {
             "Version": "2012-10-17",
@@ -119,7 +121,7 @@ gameWebsocketApi = aws.apigatewayv2.Api(
 # Create Lambda Function
 for i in range(len(lambdaFunctionKeys)):
     lambdaFunctions += aws.lambda_.Function(
-        lambdaFunctionKeys[i] + "-2022-pulumi",
+        lambdaFunctionKeys[i] + namingSuffix,
         role=dbTableIAmRole.arn,
         handler="index.handler",
         runtime=aws.lambda_.Runtime.NODE_JS14D_X,
@@ -130,7 +132,7 @@ for i in range(len(lambdaFunctionKeys)):
         ),
     )
     lambdaPermissions += aws.lambda_.Permission(
-        lambdaFunctionKeys[i] + "Permissions" + "-2022-pulumi",
+        lambdaFunctionKeys[i] + "Permissions" + namingSuffix,
         action="lambda:InvokeFunction",
         principal="apigateway.amazonaws.com",
         function=lambdaFunctions[i].arn,
@@ -138,41 +140,9 @@ for i in range(len(lambdaFunctionKeys)):
         opts=pulumi.ResourceOptions(depends_on=[gameWebsocketApi, lambdaFunctions[i]]),
     )
 
-
-gameWebsocketApiRouteGameMessaging = aws.apigatewayv2.Route(
-    "OnMessage",
-    api_id=gameWebsocketApi.id,
-    route_key="OnMessage")
-
-gameWebsocketApiRouteDefault = aws.apigatewayv2.Route(
-    "default",
-    api_id=gameWebsocketApi.id,
-    route_key="$default")
-
-gameWebsocketApiRouteJoinGame = aws.apigatewayv2.Route(
-    "connect",
-    api_id=gameWebsocketApi.id,
-    route_key="$connect")
-
-gameWebsocketApiRouteDisconnectGame = aws.apigatewayv2.Route(
-    "disconnect",
-    api_id=gameWebsocketApi.id,
-    route_key="$disconnect")
-
-
-# Permissions to API Gateway to invoke the lambda function
-lambdaPermission = aws.lambda_.Permission(
-    "dynamoDbCrudLambdaPermissions",
-    action="lambda:InvokeFunction",
-    principal="apigateway.amazonaws.com",
-    function=lambdaFunctionGameMessaging.arn,
-    source_arn=pulumi.Output.concat(gameWebsocketApi.execution_arn, "/*/*"),
-    opts=pulumi.ResourceOptions(depends_on=[gameWebsocketApi, lambdaFunctionGameMessaging]),
-)
-
 for i in range(len(websocketApiIntegrationKeys)):
     apiIntegrations += aws.apigatewayv2.Integration(
-    websocketApiIntegrationKeys[i] + "-2022-pulumi",
+    websocketApiIntegrationKeys[i] + namingSuffix,
     api_id=gameWebsocketApi.id,
     integration_type="AWS_PROXY",
     connection_type="INTERNET",
@@ -187,7 +157,7 @@ for i in range(len(websocketApiIntegrationKeys)):
 for i in range(len(websocketApiRouteKeys)):
     websocketApiRoutes.append(
         aws.apigatewayv2.Route(
-            websocketApiRouteKeys[i] + "-2022-pulumi",
+            websocketApiRouteKeys[i] + namingSuffix,
             api_id=gameWebsocketApi.id,
             route_key=websocketApiRouteKeys[i],
             target=pulumi.Output.concat(
@@ -198,8 +168,8 @@ for i in range(len(websocketApiRouteKeys)):
 
 
 # Creating default stage
-publicHttpApiDefaultStage = aws.apigatewayv2.Stage(
-    "publicHttpApiDefaultStage",
+gameWebsocketApiStage = aws.apigatewayv2.Stage(
+    "gameWebsocketApiStage" + namingSuffix,
     api_id=gameWebsocketApi.id,
     name=pulumi.get_stack(),
     auto_deploy=True,
@@ -208,6 +178,7 @@ publicHttpApiDefaultStage = aws.apigatewayv2.Stage(
 )
 
 # Outputs
-pulumi.export(name="dynamoDbCrudLambda", value=lambdaFunctionGameMessaging.name)
-pulumi.export(
-    name="publicHttpApiDefaultStage", value=publicHttpApiDefaultStage.invoke_url
+for i in range(len(lambdaFunctionKeys)):
+    pulumi.export(name=lambdaFunctionKeys[i], value=lambdaFunctions[i].name)
+    
+pulumi.export("gameWebsocketApiStage" + namingSuffix, value=gameWebsocketApiStage.invoke_url)
