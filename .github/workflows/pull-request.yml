@@ -6,7 +6,6 @@ jobs:
     name: Preview
     runs-on: ubuntu-latest
     steps:
-      - working-directory: ./Pulumi
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v2
         with:
@@ -17,7 +16,9 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-region: ${{ secrets.AWS_REGION }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      - run: pip install -r requirements.txt
+      - name: install-dependencies
+        working-directory: ./Pulumi
+        run: pip install -r requirements.txt
       - uses: pulumi/actions@v3
         with:
           command: preview
