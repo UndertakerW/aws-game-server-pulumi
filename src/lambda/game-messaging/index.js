@@ -2,7 +2,7 @@ const AWS = require('aws-sdk');
 const ddb = new AWS.DynamoDB.DocumentClient();
 require('./patch.js');
 let send = undefined;
-const TABLE_NAME = "game-session-2022-2"; // your dynamodb table name
+const TABLE_NAME = "game-session-2022-pulumi"; // your dynamodb table name
 const FIRST_TO_JOIN_OP = "0";
 const REQUEST_START_OP = "1";
 const THROW_OP = "5";

@@ -30,7 +30,7 @@ lambdaFunctionCode = []
 lambdaFunctions = []
 lambdaPermissions = []
 apiRoutes = []
-apiIntegrations = []
+websocketApiIntegrations = []
 
 namingSuffix = "-2022-pulumi"
 
@@ -43,7 +43,8 @@ tags = {
 
 # DynamoDB item table
 dbTable = aws.dynamodb.Table(
-    "game-session" + namingSuffix,
+    "game-session" + namingSuffix,    
+    name="game-session" + namingSuffix,
     attributes=[aws.dynamodb.TableAttributeArgs(name="uuid", type="S")],
     hash_key="uuid",
     read_capacity=1,
@@ -53,6 +54,7 @@ dbTable = aws.dynamodb.Table(
 
 dbTableIAmPolicy = aws.iam.Policy(
     "iam-policy" + namingSuffix,
+    name="iam-policy" + namingSuffix,
     description="This policy grants permission to interact with DynamoDB",
     policy=dbTable.arn.apply(
         lambda arn: json.dumps(
@@ -79,7 +81,8 @@ dbTableIAmPolicy = aws.iam.Policy(
 
 # Create Lambda Function role
 dbTableIAmRole = aws.iam.Role(
-    "iam-role" + namingSuffix,
+    "game-server-role" + namingSuffix,
+    name="game-server-role" + namingSuffix,
     assume_role_policy=json.dumps(
         {
             "Version": "2012-10-17",
@@ -97,6 +100,10 @@ dbTableIAmRole = aws.iam.Role(
     ),
     managed_policy_arns=[
         "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+        "arn:aws:iam::aws:policy/AmazonAPIGatewayInvokeFullAccess",
+        "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess",
+        "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess",
+        "arn:aws:iam::aws:policy/AmazonAPIGatewayAdministrator",
         dbTableIAmPolicy.arn,
     ],
     tags=tags,
@@ -104,15 +111,19 @@ dbTableIAmRole = aws.iam.Role(
 
 # Get Lambda Code
 for i in range(len(lambdaFunctionKeys)):
-    lambdaFunctionCode += pulumi.asset.AssetArchive(
+    lambdaFunctionCode.append(
+        pulumi.asset.AssetArchive(
         {
             ".": pulumi.asset.FileArchive("./src/lambda/" + lambdaFunctionKeys[i]),
         }
-    )
+        )
+    ) 
 
 # Creating API Gateway WebSocket API
 gameWebsocketApi = aws.apigatewayv2.Api(
-    "game-websocket-api-2022-pulumi",
+    "game-websocket-api" + namingSuffix,
+    name="game-websocket-api" + namingSuffix,
+    route_selection_expression="$request.body.action",
     protocol_type="WEBSOCKET",
     description="API Gateway Websocket API",
     tags=tags,
@@ -120,38 +131,45 @@ gameWebsocketApi = aws.apigatewayv2.Api(
 
 # Create Lambda Function
 for i in range(len(lambdaFunctionKeys)):
-    lambdaFunctions += aws.lambda_.Function(
+    lambdaFunctions.append(
+        aws.lambda_.Function(
         lambdaFunctionKeys[i] + namingSuffix,
+        name=lambdaFunctionKeys[i] + namingSuffix,
         role=dbTableIAmRole.arn,
         handler="index.handler",
-        runtime=aws.lambda_.Runtime.NODE_JS14D_X,
+        runtime=aws.lambda_.Runtime.NODE_JS12D_X,
         code=lambdaFunctionCode[i],
         tags=tags,
         environment=aws.lambda_.FunctionEnvironmentArgs(
             variables={"DYNAMODB_TABLE": dbTable.name}
         ),
-    )
-    lambdaPermissions += aws.lambda_.Permission(
+        )
+    ) 
+    lambdaPermissions.append(
+        aws.lambda_.Permission(
         lambdaFunctionKeys[i] + "Permissions" + namingSuffix,
         action="lambda:InvokeFunction",
         principal="apigateway.amazonaws.com",
         function=lambdaFunctions[i].arn,
         source_arn=pulumi.Output.concat(gameWebsocketApi.execution_arn, "/*/*"),
         opts=pulumi.ResourceOptions(depends_on=[gameWebsocketApi, lambdaFunctions[i]]),
+        )
     )
 
 for i in range(len(websocketApiIntegrationKeys)):
-    apiIntegrations += aws.apigatewayv2.Integration(
-    websocketApiIntegrationKeys[i] + namingSuffix,
-    api_id=gameWebsocketApi.id,
-    integration_type="AWS_PROXY",
-    connection_type="INTERNET",
-    content_handling_strategy="CONVERT_TO_TEXT",
-    description="Integration for game-messaging lambda function",
-    integration_method="POST",
-    integration_uri=lambdaFunctions[i%len(lambdaFunctions)].invoke_arn,
-    passthrough_behavior="WHEN_NO_MATCH"
-)
+    websocketApiIntegrations.append(
+        aws.apigatewayv2.Integration(
+        websocketApiIntegrationKeys[i] + namingSuffix,
+        api_id=gameWebsocketApi.id,
+        integration_type="AWS_PROXY",
+        connection_type="INTERNET",
+        content_handling_strategy="CONVERT_TO_TEXT",
+        description="Integration for game-messaging lambda function",
+        integration_method="POST",
+        integration_uri=lambdaFunctions[i%len(lambdaFunctions)].invoke_arn,
+        passthrough_behavior="WHEN_NO_MATCH"
+        )
+    ) 
 
 # Creating routes
 for i in range(len(websocketApiRouteKeys)):
@@ -161,7 +179,7 @@ for i in range(len(websocketApiRouteKeys)):
             api_id=gameWebsocketApi.id,
             route_key=websocketApiRouteKeys[i],
             target=pulumi.Output.concat(
-                "integrations/", websocketApiIntegrationKeys[i].id
+                "integrations/", websocketApiIntegrations[i].id
             ),
         )
     )
@@ -170,8 +188,8 @@ for i in range(len(websocketApiRouteKeys)):
 # Creating default stage
 gameWebsocketApiStage = aws.apigatewayv2.Stage(
     "gameWebsocketApiStage" + namingSuffix,
+    name="gameWebsocketApiStage" + namingSuffix,
     api_id=gameWebsocketApi.id,
-    name=pulumi.get_stack(),
     auto_deploy=True,
     tags=tags,
     opts=pulumi.ResourceOptions(depends_on=websocketApiRoutes),

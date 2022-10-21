@@ -1,7 +1,7 @@
 const AWS = require('aws-sdk');
 const ddb = new AWS.DynamoDB.DocumentClient();
 require('./patch.js');
-const TABLE_NAME = "game-session-2022-2"; // your dynamodb table name
+const TABLE_NAME = "game-session-2022-pulumi"; // your dynamodb table name
 const PLAYING_OP = "11";
 
 function init(event) {
