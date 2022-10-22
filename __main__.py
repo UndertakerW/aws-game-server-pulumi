@@ -41,9 +41,9 @@ tags = {
     "Team": "WeiWu",
 }
 
-# DynamoDB item table
+# Create DynamoDB table
 dbTable = aws.dynamodb.Table(
-    "game-session" + namingSuffix,    
+    "game-session" + namingSuffix,
     name="game-session" + namingSuffix,
     attributes=[aws.dynamodb.TableAttributeArgs(name="uuid", type="S")],
     hash_key="uuid",
@@ -52,6 +52,7 @@ dbTable = aws.dynamodb.Table(
     tags=tags,
 )
 
+# Create Lambda + DynamoDB Policy
 dbTableIAmPolicy = aws.iam.Policy(
     "iam-policy" + namingSuffix,
     name="iam-policy" + namingSuffix,
@@ -79,7 +80,7 @@ dbTableIAmPolicy = aws.iam.Policy(
     tags=tags,
 )
 
-# Create Lambda Function role
+# Create Lambda Function Role
 dbTableIAmRole = aws.iam.Role(
     "game-server-role" + namingSuffix,
     name="game-server-role" + namingSuffix,
@@ -117,9 +118,9 @@ for i in range(len(lambdaFunctionKeys)):
             ".": pulumi.asset.FileArchive("./src/lambda/" + lambdaFunctionKeys[i]),
         }
         )
-    ) 
+    )
 
-# Creating API Gateway WebSocket API
+# Create API Gateway WebSocket API
 gameWebsocketApi = aws.apigatewayv2.Api(
     "game-websocket-api" + namingSuffix,
     name="game-websocket-api" + namingSuffix,
@@ -144,7 +145,7 @@ for i in range(len(lambdaFunctionKeys)):
             variables={"DYNAMODB_TABLE": dbTable.name}
         ),
         )
-    ) 
+    )
     lambdaPermissions.append(
         aws.lambda_.Permission(
         lambdaFunctionKeys[i] + "Permissions" + namingSuffix,
@@ -156,6 +157,7 @@ for i in range(len(lambdaFunctionKeys)):
         )
     )
 
+# Create API Integrations of Lambda Functions
 for i in range(len(websocketApiIntegrationKeys)):
     websocketApiIntegrations.append(
         aws.apigatewayv2.Integration(
@@ -169,9 +171,9 @@ for i in range(len(websocketApiIntegrationKeys)):
         integration_uri=lambdaFunctions[i%len(lambdaFunctions)].invoke_arn,
         passthrough_behavior="WHEN_NO_MATCH"
         )
-    ) 
+    )
 
-# Creating routes
+# Create API Routes
 for i in range(len(websocketApiRouteKeys)):
     websocketApiRoutes.append(
         aws.apigatewayv2.Route(
@@ -185,7 +187,7 @@ for i in range(len(websocketApiRouteKeys)):
     )
 
 
-# Creating default stage
+# Create API Stage
 gameWebsocketApiStage = aws.apigatewayv2.Stage(
     "gameWebsocketApiStage" + namingSuffix,
     name="gameWebsocketApiStage" + namingSuffix,
@@ -195,8 +197,15 @@ gameWebsocketApiStage = aws.apigatewayv2.Stage(
     opts=pulumi.ResourceOptions(depends_on=websocketApiRoutes),
 )
 
-# Outputs
+# Set outputs
 for i in range(len(lambdaFunctionKeys)):
     pulumi.export(name=lambdaFunctionKeys[i], value=lambdaFunctions[i].name)
     
 pulumi.export("gameWebsocketApiStage" + namingSuffix, value=gameWebsocketApiStage.invoke_url)
+
+# Write API url to File
+def writeApiUrlToFile(api_url):
+    f = open("../Unity/Assets/Resources/aws-api.txt", "w")
+    f.write(api_url)
+    f.close()
+gameWebsocketApiStage.invoke_url.apply(lambda v: writeApiUrlToFile(v))
